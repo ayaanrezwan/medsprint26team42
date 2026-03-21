@@ -1,40 +1,157 @@
 // ═══════════════════════════════════════════════════════════════════
-//  LIMB-GIRDLE BRACE CONTROLLER  —  ESP32 Firmware
-//  Flash with Arduino IDE or PlatformIO
-//  Libraries needed: Adafruit_BNO08x, ArduinoJson, WiFi (built-in)
+//  LIMB-GIRDLE BRACE CONTROLLER  —  ESP32 Firmware (Servo + Tongue)
+//  Libraries needed: ESP32Servo, ArduinoJson, WebSockets
+//  Install all three via Arduino IDE → Library Manager
 // ═══════════════════════════════════════════════════════════════════
 
-#include <Wire.h>
-#include <Adafruit_BNO08x.h>
+#include <ESP32Servo.h>
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <WebSocketsServer.h>
 
-// ── WiFi credentials (for dashboard) ──────────────────────────────
+// ── WiFi (for dashboard) ───────────────────────────────────────────
 const char* WIFI_SSID = "YOUR_WIFI_NAME";
 const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";
 
 // ── Pin assignments ────────────────────────────────────────────────
-#define LOCK_PIN        18   // GPIO pin → relay/solenoid for knee lock
-#define TONGUE_PIN_1    34   // Analog in: tongue pressure sensor 1 (left)
-#define TONGUE_PIN_2    35   // Analog in: tongue pressure sensor 2 (right)
-#define TONGUE_PIN_3    32   // Analog in: tongue pressure sensor 3 (center)
-#define STATUS_LED      2    // Built-in LED: blink on fall detection
+#define SERVO_PIN      13   // PWM-capable GPIO → servo signal wire
+#define TONGUE_PIN_L   34   // Analog: left pressure pad  → LOCK
+#define TONGUE_PIN_R   35   // Analog: right pressure pad → UNLOCK
+#define TONGUE_PIN_C   32   // Analog: center pad         → TOGGLE
+#define STATUS_LED      2   // Built-in LED
 
-// ── Tongue press thresholds ────────────────────────────────────────
-// ADC reads 0–4095. Adjust these after testing your actual retainer.
-#define TONGUE_PRESS_THRESHOLD  2000   // value above = "pressed"
-#define TONGUE_HOLD_MS          300    // must hold for 300ms to count
+// ── Servo positions ────────────────────────────────────────────────
+// Adjust these two angles after testing with your physical brace.
+// 0°  = fully extended/stiff  (locked)
+// 90° = free range of motion  (unlocked)
+#define SERVO_LOCKED    0
+#define SERVO_UNLOCKED  90
 
-// ── IMU settings ──────────────────────────────────────────────────
-Adafruit_BNO08x imu;
-sh2_SensorValue_t imuValue;
+// ── Tongue sensor tuning ───────────────────────────────────────────
+// ADC range: 0–4095. Print raw values first, then set threshold
+// just above the resting (no-press) value you observe.
+#define PRESS_THRESHOLD  2000   // above this = "pressed"
+#define HOLD_MS           300   // must hold this long to confirm press
+                                // prevents accidental triggers
 
-// ── Fall detection settings ───────────────────────────────────────
-// These are the threshold-based rules (no ML needed for hackathon).
-// Tune by printing raw values and walking around first.
-#define ACCEL_FALL_THRESHOLD  18.0   // m/s² — sudden spike = impact
-#define GYRO_FALL_THRESHOLD   300.0  // deg/s — fast rotation = stumble
+// ── State ─────────────────────────────────────────────────────────
+Servo braceServo;
+bool  braceLocked     = false;
+bool  actionTaken     = false;   // prevents repeated triggers per hold
+unsigned long holdStart = 0;
+bool  wasPressed        = false;
+
+WebSocketsServer ws = WebSocketsServer(81);
+
+// ─────────────────────────────────────────────────────────────────
+void setup() {
+  Serial.begin(115200);
+  pinMode(STATUS_LED, OUTPUT);
+
+  // Attach servo and start in unlocked position
+  braceServo.attach(SERVO_PIN);
+  setServo(false);
+  Serial.println("Servo ready — starting UNLOCKED");
+
+  // WiFi
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500); Serial.print(".");
+  }
+  Serial.print("\nDashboard: http://");
+  Serial.println(WiFi.localIP());
+
+  ws.begin();
+  ws.onEvent(onWebSocketEvent);
+}
+
+// ─────────────────────────────────────────────────────────────────
+void loop() {
+  ws.loop();
+
+  // Read all three tongue pads
+  int L = analogRead(TONGUE_PIN_L);
+  int R = analogRead(TONGUE_PIN_R);
+  int C = analogRead(TONGUE_PIN_C);
+
+  bool leftPressed   = L > PRESS_THRESHOLD;
+  bool rightPressed  = R > PRESS_THRESHOLD;
+  bool centerPressed = C > PRESS_THRESHOLD;
+  bool anyPressed    = leftPressed || rightPressed || centerPressed;
+
+  // ── Debounce + hold detection ──────────────────────────────────
+  if (anyPressed && !wasPressed) {
+    holdStart  = millis();
+    wasPressed = true;
+    actionTaken = false;
+  }
+  if (!anyPressed) {
+    wasPressed  = false;
+    actionTaken = false;
+  }
+
+  bool confirmed = wasPressed &&
+                   !actionTaken &&
+                   (millis() - holdStart > HOLD_MS);
+
+  if (confirmed) {
+    actionTaken = true;  // only act once per continuous press
+
+    if (leftPressed)        { setBrace(true,  "TONGUE_LEFT");   }
+    else if (rightPressed)  { setBrace(false, "TONGUE_RIGHT");  }
+    else if (centerPressed) { setBrace(!braceLocked, "TOGGLE"); }
+  }
+
+  // Send status to dashboard every 50ms
+  static unsigned long lastSend = 0;
+  if (millis() - lastSend > 50) {
+    sendStatus(L, R, C);
+    lastSend = millis();
+  }
+
+  delay(10);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  BRACE CONTROL
+// ─────────────────────────────────────────────────────────────────
+void setBrace(bool lock, const char* reason) {
+  braceLocked = lock;
+  setServo(lock);
+  digitalWrite(STATUS_LED, lock ? HIGH : LOW);
+  Serial.printf("%s [%s]\n", lock ? "🔒 LOCKED" : "🔓 Unlocked", reason);
+}
+
+void setServo(bool lock) {
+  braceServo.write(lock ? SERVO_LOCKED : SERVO_UNLOCKED);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  WEBSOCKET — send JSON to dashboard
+// ─────────────────────────────────────────────────────────────────
+void sendStatus(int L, int R, int C) {
+  StaticJsonDocument<128> doc;
+  doc["locked"] = braceLocked;
+  doc["t1"] = L;
+  doc["t2"] = R;
+  doc["t3"] = C;
+  String json;
+  serializeJson(doc, json);
+  ws.broadcastTXT(json);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  WEBSOCKET — receive commands from dashboard buttons
+// ─────────────────────────────────────────────────────────────────
+void onWebSocketEvent(uint8_t num, WStype_t type,
+                      uint8_t* payload, size_t length) {
+  if (type == WStype_TEXT) {
+    String msg = String((char*)payload);
+    if (msg == "LOCK")   setBrace(true,  "DASHBOARD");
+    if (msg == "UNLOCK") setBrace(false, "DASHBOARD");
+  }
+}#define GYRO_FALL_THRESHOLD   300.0  // deg/s — fast rotation = stumble
 #define LOCK_HOLD_MS          2000   // keep brace locked for 2 seconds
 
 // ── State variables ───────────────────────────────────────────────
