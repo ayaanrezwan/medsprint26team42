@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KneeSafe — Brace Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;700;800&display=swap');
+
+  :root {
+    --bg:      #0d0f14;
+    --surface: #151821;
+    --border:  #232737;
+    --text:    #e8eaf0;
+    --muted:   #5c6280;
+    --green:   #22d48f;
+    --red:     #f04f5a;
+    --amber:   #f5a623;
+    --blue:    #4d9fff;
+    --purple:  #a78bfa;
+    --mono:    'DM Mono', monospace;
+    --sans:    'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: var(--green);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+
+  .logo h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { font-size: 13px; color: var(--muted); font-weight: 400; }
+
+  .conn-status {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .conn-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .conn-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .conn-dot.error { background: var(--red); }
+
+  /* IP input */
+  .ip-bar {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin-bottom: 20px;
+  }
+  .ip-bar label { font-size: 12px; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+  .ip-bar input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--text); font-family: var(--mono); font-size: 14px;
+  }
+  .ip-bar button {
+    background: var(--blue); color: #fff; border: none;
+    border-radius: 7px; padding: 6px 14px;
+    font-family: var(--sans); font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.2s;
+  }
+  .ip-bar button:hover { opacity: 0.85; }
+
+  /* Grid layout */
+  .grid {
+    display: grid;
+    grid-template-columns: 260px 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 16px;
+  }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    .brace-card { grid-column: 1 / -1; }
+  }
+  @media (max-width: 580px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+
+  .card-label {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    font-family: var(--mono);
+  }
+
+  /* ── BRACE STATUS CARD ── */
+  .brace-card {
+    grid-row: 1 / 3;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    gap: 16px;
+  }
+
+  .brace-ring {
+    width: 140px; height: 140px;
+    border-radius: 50%;
+    border: 3px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+    position: relative;
+    transition: border-color 0.4s, box-shadow 0.4s;
+  }
+  .brace-ring.locked {
+    border-color: var(--red);
+    box-shadow: 0 0 24px rgba(240,79,90,0.3);
+  }
+  .brace-ring.locked-safe {
+    border-color: var(--amber);
+    box-shadow: 0 0 24px rgba(245,166,35,0.3);
+  }
+
+  .brace-icon { font-size: 42px; line-height: 1; }
+  .brace-state {
+    font-size: 15px; font-weight: 700;
+    letter-spacing: 0.5px;
+    transition: color 0.3s;
+  }
+  .brace-reason { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  .brace-btns {
+    display: flex; gap: 10px; width: 100%;
+  }
+  .btn {
+    flex: 1; padding: 10px 0;
+    border: none; border-radius: 10px;
+    font-family: var(--sans); font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.2s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-lock   { background: var(--red);   color: #fff; }
+  .btn-unlock { background: var(--green); color: #0d0f14; }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+
+  /* ── RISK METER ── */
+  .risk-card { grid-column: 2; }
+  .risk-value {
+    font-size: 52px; font-weight: 800; font-family: var(--mono);
+    line-height: 1; margin-bottom: 6px;
+    transition: color 0.3s;
+  }
+  .risk-bar-track {
+    height: 8px; background: var(--border); border-radius: 4px;
+    overflow: hidden; margin: 12px 0 6px;
+  }
+  .risk-bar-fill {
+    height: 100%; border-radius: 4px;
+    background: var(--green);
+    transition: width 0.3s, background 0.3s;
+    width: 0%;
+  }
+  .risk-labels {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+  }
+
+  /* ── TONGUE SENSOR ── */
+  .tongue-card { grid-column: 3; }
+  .tongue-sensors {
+    display: flex; gap: 10px; justify-content: center;
+    margin-top: 8px;
+  }
+  .sensor-pad {
+    flex: 1; padding: 12px 8px; border-radius: 10px;
+    text-align: center;
+    border: 1.5px solid var(--border);
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .sensor-pad.active {
+    background: rgba(77,159,255,0.15);
+    border-color: var(--blue);
+  }
+  .sensor-pad .pad-label { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+  .sensor-pad .pad-val { font-size: 20px; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
+  .sensor-pad .pad-bar {
+    height: 4px; background: var(--border); border-radius: 2px;
+    margin-top: 8px; overflow: hidden;
+  }
+  .sensor-pad .pad-bar-fill {
+    height: 100%; background: var(--blue); border-radius: 2px;
+    transition: width 0.15s;
+  }
+
+  /* ── IMU CHART ── */
+  .chart-card { grid-column: 2 / 4; height: 220px; }
+  .chart-card canvas { width: 100% !important; height: 170px !important; }
+
+  /* ── IMU READOUTS ── */
+  .imu-card { grid-column: 2 / 4; }
+  .imu-grid {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;
+    margin-top: 4px;
+  }
+  .imu-val {
+    background: var(--bg); border-radius: 8px; padding: 10px;
+    text-align: center; border: 1px solid var(--border);
+  }
+  .imu-val .axis { font-size: 10px; font-family: var(--mono); color: var(--muted); }
+  .imu-val .num  { font-size: 16px; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
+
+  /* ── EVENT LOG ── */
+  .log-card { grid-column: 1 / -1; max-height: 160px; overflow: hidden; }
+  .log-inner {
+    overflow-y: auto; max-height: 110px;
+    font-family: var(--mono); font-size: 12px;
+    display: flex; flex-direction: column; gap: 4px;
+    margin-top: 4px;
+  }
+  .log-entry {
+    display: flex; gap: 10px; padding: 5px 8px;
+    border-radius: 6px; background: var(--bg);
+    border-left: 3px solid var(--border);
+  }
+  .log-entry.fall { border-color: var(--red); }
+  .log-entry.manual { border-color: var(--blue); }
+  .log-entry.unlock { border-color: var(--green); }
+  .log-time { color: var(--muted); }
+  .log-msg { color: var(--text); }
+
+  /* pulse animation for fall alert */
+  @keyframes pulse-red { 0%,100%{opacity:1} 50%{opacity:0.6} }
+  .fall-alert { animation: pulse-red 0.8s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🦿</div>
+    <div>
+      <h1>KneeSafe</h1>
+      <span>Limb-girdle brace monitor</span>
+    </div>
+  </div>
+  <div class="conn-status">
+    <div class="conn-dot" id="connDot"></div>
+    <span id="connLabel">Disconnected</span>
+  </div>
+</header>
+
+<div class="ip-bar">
+  <label>ESP32 IP →</label>
+  <input type="text" id="ipInput" value="192.168.1.100" placeholder="192.168.x.x"/>
+  <button onclick="connect()">Connect</button>
+</div>
+
+<div class="grid">
+
+  <!-- BRACE STATUS -->
+  <div class="card brace-card">
+    <div class="card-label">Brace status</div>
+    <div class="brace-ring" id="braceRing">
+      <div class="brace-icon" id="braceIcon">🔓</div>
+      <div class="brace-state" id="braceState" style="color:var(--green)">UNLOCKED</div>
+    </div>
+    <div class="brace-reason" id="braceReason">Awaiting data…</div>
+    <div class="brace-btns">
+      <button class="btn btn-lock"   onclick="sendCmd('LOCK')">Lock</button>
+      <button class="btn btn-unlock" onclick="sendCmd('UNLOCK')">Unlock</button>
+    </div>
+  </div>
+
+  <!-- RISK METER -->
+  <div class="card risk-card">
+    <div class="card-label">Fall risk score</div>
+    <div class="risk-value" id="riskVal" style="color:var(--green)">0.00</div>
+    <div style="font-size:12px;color:var(--muted);font-family:var(--mono)">threshold: 0.75</div>
+    <div class="risk-bar-track">
+      <div class="risk-bar-fill" id="riskBar"></div>
+    </div>
+    <div class="risk-labels"><span>safe</span><span>caution</span><span>lock</span></div>
+  </div>
+
+  <!-- TONGUE SENSORS -->
+  <div class="card tongue-card">
+    <div class="card-label">Tongue pressure sensors</div>
+    <div class="tongue-sensors">
+      <div class="sensor-pad" id="pad1">
+        <div class="pad-label">LEFT</div>
+        <div class="pad-val" id="t1val">0</div>
+        <div class="pad-bar"><div class="pad-bar-fill" id="t1bar" style="width:0%"></div></div>
+      </div>
+      <div class="sensor-pad" id="pad2">
+        <div class="pad-label">CENTER</div>
+        <div class="pad-val" id="t2val">0</div>
+        <div class="pad-bar"><div class="pad-bar-fill" id="t2bar" style="width:0%"></div></div>
+      </div>
+      <div class="sensor-pad" id="pad3">
+        <div class="pad-label">RIGHT</div>
+        <div class="pad-val" id="t3val">0</div>
+        <div class="pad-bar"><div class="pad-bar-fill" id="t3bar" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- IMU CHART -->
+  <div class="card chart-card">
+    <div class="card-label">Accelerometer magnitude — live (m/s²)</div>
+    <canvas id="accelChart"></canvas>
+  </div>
+
+  <!-- IMU READOUTS -->
+  <div class="card imu-card">
+    <div class="card-label">Raw IMU values</div>
+    <div class="imu-grid">
+      <div class="imu-val"><div class="axis">AX</div><div class="num" id="ax">—</div></div>
+      <div class="imu-val"><div class="axis">AY</div><div class="num" id="ay">—</div></div>
+      <div class="imu-val"><div class="axis">AZ</div><div class="num" id="az">—</div></div>
+      <div class="imu-val"><div class="axis">GX °/s</div><div class="num" id="gx">—</div></div>
+      <div class="imu-val"><div class="axis">GY °/s</div><div class="num" id="gy">—</div></div>
+      <div class="imu-val"><div class="axis">GZ °/s</div><div class="num" id="gz">—</div></div>
+    </div>
+  </div>
+
+  <!-- EVENT LOG -->
+  <div class="card log-card">
+    <div class="card-label">Event log</div>
+    <div class="log-inner" id="logInner">
+      <div class="log-entry"><span class="log-time">--:--:--</span><span class="log-msg">Waiting for connection…</span></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── WebSocket ─────────────────────────────────────────────────────
+let ws = null;
+const THRESHOLD = 2000;   // tongue press threshold (match ESP32)
+const FALL_THRESHOLD = 0.75;
+
+function connect() {
+  const ip = document.getElementById('ipInput').value.trim();
+  if (ws) ws.close();
+  ws = new WebSocket(`ws://${ip}:81`);
+  ws.onopen    = () => setConn(true);
+  ws.onclose   = () => setConn(false);
+  ws.onerror   = () => setConn(false);
+  ws.onmessage = (e) => handleData(JSON.parse(e.data));
+}
+
+function sendCmd(cmd) {
+  if (ws && ws.readyState === 1) ws.send(cmd);
+  addLog(cmd === 'LOCK' ? 'Dashboard manual lock' : 'Dashboard manual unlock',
+         cmd === 'LOCK' ? 'manual' : 'unlock');
+}
+
+function setConn(on) {
+  document.getElementById('connDot').className   = 'conn-dot' + (on ? ' connected' : ' error');
+  document.getElementById('connLabel').textContent = on ? 'Connected' : 'Disconnected';
+}
+
+// ── Chart setup ────────────────────────────────────────────────────
+const MAX_POINTS = 80;
+const chartData = { labels: Array(MAX_POINTS).fill(''), datasets: [{
+  label: 'Accel mag', data: Array(MAX_POINTS).fill(0),
+  borderColor: '#4d9fff', borderWidth: 1.5, fill: true,
+  backgroundColor: 'rgba(77,159,255,0.08)', pointRadius: 0, tension: 0.3
+},{
+  label: 'Fall threshold (18)', data: Array(MAX_POINTS).fill(18),
+  borderColor: '#f04f5a', borderWidth: 1, borderDash: [4,4],
+  pointRadius: 0, fill: false
+}]};
+
+const chart = new Chart(document.getElementById('accelChart'), {
+  type: 'line', data: chartData,
+  options: {
+    animation: false, responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: { min: 0, max: 30, grid: { color: '#232737' },
+           ticks: { color: '#5c6280', font: { family: 'DM Mono', size: 10 } } }
+    }
+  }
+});
+
+// ── Data handler ───────────────────────────────────────────────────
+let lastLocked = false;
+
+function handleData(d) {
+  // Compute risk score from raw IMU (mirrors ESP32 threshold logic)
+  const accelMag = d.accelMag ?? Math.sqrt(d.ax**2 + d.ay**2 + d.az**2);
+  const gyroMag  = d.gyroMag  ?? Math.sqrt(d.gx**2 + d.gy**2 + d.gz**2);
+  const risk = Math.min(1, (accelMag / 18) * 0.6 + (gyroMag / 300) * 0.4);
+
+  // Risk meter
+  const pct = (risk * 100).toFixed(0);
+  const color = risk < 0.5 ? 'var(--green)' : risk < 0.75 ? 'var(--amber)' : 'var(--red)';
+  document.getElementById('riskVal').textContent = risk.toFixed(2);
+  document.getElementById('riskVal').style.color = color;
+  document.getElementById('riskBar').style.width = pct + '%';
+  document.getElementById('riskBar').style.background = color;
+
+  // Brace status
+  const ring  = document.getElementById('braceRing');
+  const icon  = document.getElementById('braceIcon');
+  const state = document.getElementById('braceState');
+  if (d.locked) {
+    ring.className = 'brace-ring locked';
+    icon.textContent = '🔒';
+    icon.classList.add('fall-alert');
+    state.textContent = 'LOCKED';
+    state.style.color = 'var(--red)';
+    if (!lastLocked) addLog('Brace locked — fall risk detected', 'fall');
+  } else {
+    ring.className = 'brace-ring';
+    icon.textContent = '🔓';
+    icon.classList.remove('fall-alert');
+    state.textContent = 'UNLOCKED';
+    state.style.color = 'var(--green)';
+    if (lastLocked) addLog('Brace unlocked', 'unlock');
+  }
+  lastLocked = d.locked;
+
+  // IMU readouts
+  ['ax','ay','az','gx','gy','gz'].forEach(k => {
+    document.getElementById(k).textContent = d[k].toFixed(2);
+  });
+
+  // Chart
+  chartData.datasets[0].data.push(accelMag);
+  chartData.datasets[0].data.shift();
+  chart.update('none');
+
+  // Tongue pads
+  updatePad(1, d.t1); updatePad(2, d.t2); updatePad(3, d.t3);
+}
+
+function updatePad(n, val) {
+  const pct = Math.min(100, (val / 4095) * 100).toFixed(0);
+  const pressed = val > THRESHOLD;
+  document.getElementById(`t${n}val`).textContent = val;
+  document.getElementById(`t${n}bar`).style.width = pct + '%';
+  document.getElementById(`pad${n}`).classList.toggle('active', pressed);
+}
+
+// ── Event log ──────────────────────────────────────────────────────
+function addLog(msg, type = '') {
+  const now = new Date().toTimeString().slice(0,8);
+  const log = document.getElementById('logInner');
+  const el  = document.createElement('div');
+  el.className = `log-entry ${type}`;
+  el.innerHTML = `<span class="log-time">${now}</span><span class="log-msg">${msg}</span>`;
+  log.prepend(el);
+  while (log.children.length > 30) log.removeChild(log.lastChild);
+}
+
+// Auto-connect on load
+connect();
+</script>
+</body>
+</html>
