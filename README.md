@@ -61,30 +61,6 @@ A Python script that trains a small LSTM neural network to predict fall events f
 
 ---
 
-### `RetainerBrace_Website/index.html` — Project landing page
-A public-facing website describing the KneeSafe project for the hackathon presentation.
-
-- **Language:** HTML / CSS / JavaScript
-
----
-
-### `RetainerBrace_Deck.pptx` — Pitch deck
-Slide deck for the MedSprint 2026 presentation.
-
-### `RetainerBrace_MedSprint2026.docx` — Project document
-Written project description and documentation.
-
-### `RetainerBrace_FigmaJam_Presentation_Prompt.md` — FigmaJam prompt (presentation)
-Prompt used to generate the FigmaJam presentation board.
-
-### `RetainerBrace_FigmaJam_Prompt.md` — FigmaJam prompt (design)
-Prompt used to generate the FigmaJam design board.
-
-### `RetainerBrace_FigmaMake_Prompt.md` — Figma Make prompt
-Prompt used to generate designs via Figma Make.
-
----
-
 ## Hardware (current prototype)
 
 | Component | Role |
