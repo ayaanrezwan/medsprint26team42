@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KneeSafe — Fall Prediction Demo</title>
+<title>Retain — Fall Prediction Demo</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: system-ui, sans-serif; background: #080a0f; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
@@ -120,7 +120,7 @@ body { font-family: system-ui, sans-serif; background: #080a0f; display: flex; a
 <div id="demo-wrap">
  
   <div id="top-bar">
-    <span class="title">KneeSafe — fall prediction demo</span>
+    <span class="title">Retain — fall prediction demo</span>
     <span class="badge" id="status-badge">Monitoring</span>
   </div>
  
@@ -134,12 +134,12 @@ body { font-family: system-ui, sans-serif; background: #080a0f; display: flex; a
         <circle id="head" cx="18" cy="10" r="8" fill="#378ADD"/>
         <rect id="torso" x="12" y="20" width="12" height="32" rx="4" fill="#185FA5"/>
         <rect id="brace" x="10" y="52" width="16" height="22" rx="3" fill="#0F6E56"/>
-        <line id="leg-l" x1="14" y1="74" x2="10" y2="110" stroke="#185FA5" stroke-width="5" stroke-linecap="round"/>
-        <line id="leg-r" x1="22" y1="74" x2="26" y2="110" stroke="#185FA5" stroke-width="5" stroke-linecap="round"/>
+        <path id="leg-l" d="M14 74 L10 110" stroke="#185FA5" stroke-width="5" stroke-linecap="round" fill="none"/>
+        <path id="leg-r" d="M22 74 L26 110" stroke="#185FA5" stroke-width="5" stroke-linecap="round" fill="none"/>
         <line id="arm-l" x1="12" y1="26" x2="4"  y2="48"  stroke="#185FA5" stroke-width="4" stroke-linecap="round"/>
         <line id="arm-r" x1="24" y1="26" x2="32" y2="48"  stroke="#185FA5" stroke-width="4" stroke-linecap="round"/>
-        <!-- IMU chips on thigh and shin -->
-        <rect x="26" y="44" width="8" height="5" rx="1" fill="#378ADD" opacity="0.9"/>
+        <!-- IMU chips on knee and shin -->
+        <rect x="26" y="70" width="8" height="5" rx="1" fill="#378ADD" opacity="0.9"/>
         <rect x="26" y="80" width="8" height="5" rx="1" fill="#378ADD" opacity="0.9"/>
       </svg>
     </div>
@@ -157,10 +157,10 @@ body { font-family: system-ui, sans-serif; background: #080a0f; display: flex; a
       </div>
       <div class="angle-label">Knee angle</div>
       <div class="imu-dots">
-        <div class="imu-dot active" title="Thigh IMU"></div>
+        <div class="imu-dot active" title="Knee IMU"></div>
         <div class="imu-dot active" title="Shin IMU"></div>
       </div>
-      <div style="font-size:10px;color:#3c4060;margin-top:4px;">Thigh · Shin IMUs</div>
+      <div style="font-size:10px;color:#3c4060;margin-top:4px;">Knee · Shin IMUs</div>
     </div>
  
     <div id="event-label">Walking normally</div>
@@ -268,7 +268,7 @@ function setBadge(mode, text) {
  
 // ── Knee angle from two IMU orientations ──────────────────────────
 // OpenSenseRT computes joint angles by differencing quaternion
-// orientations from the thigh and shin IMUs.
+// orientations from the knee and shin IMUs.
 // Here we simulate that output directly as a knee flexion angle.
 function computeKneeAngle(walkT, stumbleProgress) {
   // Normal walking: knee flexes 0-15 deg rhythmically
@@ -279,27 +279,36 @@ function computeKneeAngle(walkT, stumbleProgress) {
 }
  
 // ── Pose helpers ──────────────────────────────────────────────────
-function walkPose(t) {
+function walkPose(t, angle) {
   const swing = Math.sin(t * 4) * 12;
-  legL.setAttribute('x2', String(10 + swing));
-  legR.setAttribute('x2', String(26 - swing));
+  const bend = (angle - 8) / 20;
+  const dL = `M14 74 Q${14 - bend} ${74 + bend * 3} ${10 + swing} 110`;
+  legL.setAttribute('d', dL);
+  const dR = `M22 74 Q${22 + bend} ${74 + bend * 3} ${26 - swing} 110`;
+  legR.setAttribute('d', dR);
   armL.setAttribute('x2', String(4  - swing * 0.5));
   armR.setAttribute('x2', String(32 + swing * 0.5));
 }
  
-function stumblePose(progress) {
+function stumblePose(progress, angle) {
   figSvg.style.transform       = 'rotate(' + (progress * 28) + 'deg)';
   figSvg.style.transformOrigin = '18px 110px';
-  legL.setAttribute('x2', String(10 - progress * 8));
-  legR.setAttribute('x2', String(26 + progress * 16));
+  const bend = (angle - 8) / 20;
+  const footLX = 10 - progress * 8;
+  const footRX = 26 + progress * 16;
+  const dL = `M14 74 Q${14 - bend} ${74 + bend * 3} ${footLX} 110`;
+  legL.setAttribute('d', dL);
+  const dR = `M22 74 Q${22 + bend} ${74 + bend * 3} ${footRX} 110`;
+  legR.setAttribute('d', dR);
 }
  
 function lockedPose() {
   figSvg.style.transform = 'rotate(0deg)';
-  ['10','110','26','110'].forEach((v, i) => {
-    const attrs = ['x2','y2','x2','y2'];
-    [legL, legL, legR, legR][i].setAttribute(attrs[i], v);
-  });
+  const bend = 3.4;
+  const dL = `M14 74 Q${14 - bend} ${74 + bend * 3} 10 110`;
+  legL.setAttribute('d', dL);
+  const dR = `M22 74 Q${22 + bend} ${74 + bend * 3} 26 110`;
+  legR.setAttribute('d', dR);
   armL.setAttribute('x2', '4');
   armR.setAttribute('x2', '32');
   brace.setAttribute('fill', '#f04f5a');
@@ -308,10 +317,8 @@ function lockedPose() {
 function resetPose() {
   figSvg.style.transform = 'rotate(0deg)';
   brace.setAttribute('fill', '#0F6E56');
-  legL.setAttribute('x1','14'); legL.setAttribute('y1','74');
-  legL.setAttribute('x2','10'); legL.setAttribute('y2','110');
-  legR.setAttribute('x1','22'); legR.setAttribute('y1','74');
-  legR.setAttribute('x2','26'); legR.setAttribute('y2','110');
+  legL.setAttribute('d', 'M14 74 L10 110');
+  legR.setAttribute('d', 'M22 74 L26 110');
   armL.setAttribute('x2','4');  armL.setAttribute('y2','48');
   armR.setAttribute('x2','32'); armR.setAttribute('y2','48');
 }
@@ -355,7 +362,7 @@ function runSim() {
     if (phase === 'walk') {
       figX += 1.4;
       fig.style.left = figX + 'px';
-      walkPose(t);
+      walkPose(t, angle);
  
       const noise    = (Math.random() - 0.5) * 0.3;
       const angle    = computeKneeAngle(t, 0);
@@ -385,7 +392,7 @@ function runSim() {
       fig.style.left = figX + 'px';
  
       const progress = Math.min(1, t / 1.2);
-      stumblePose(progress);
+      stumblePose(progress, angle);
  
       const angle    = computeKneeAngle(0, progress);
       const flexRate = Math.round(4 + progress * 180 + Math.random() * 20);
@@ -419,8 +426,9 @@ function runSim() {
  
     // ── PHASE 3: Brace locked, fall prevented ────────────────────
     else if (phase === 'locked') {
+      const angle = 76;
       const holdProgress = Math.min(1, t / 0.4);
-      if (holdProgress < 1) { stumblePose((1 - holdProgress) * 0.3); }
+      if (holdProgress < 1) { stumblePose((1 - holdProgress) * 0.3, angle); }
       else { lockedPose(); }
  
       lockInd.style.left    = lockX + 'px';
