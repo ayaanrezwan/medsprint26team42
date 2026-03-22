@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KneeSafe — Fall Prediction Demo</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #080a0f; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+ 
+#demo-wrap {
+  background: #0f1117; border-radius: 14px;
+  overflow: hidden; width: 100%; max-width: 740px;
+  border: 1px solid #1e2130;
+}
+ 
+#top-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid #1e2130;
+}
+#top-bar .title { color: #e8eaf0; font-size: 14px; font-weight: 500; }
+#top-bar .badge {
+  font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 500;
+  letter-spacing: 0.5px; background: #1a2a1a; color: #22d48f;
+  border: 1px solid #22d48f44; transition: background 0.3s, color 0.3s, border-color 0.3s;
+}
+#top-bar .badge.warning { background: #2a2010; color: #f5a623; border-color: #f5a62344; }
+#top-bar .badge.danger  { background: #2a1010; color: #f04f5a; border-color: #f04f5a44; }
+ 
+#scene {
+  position: relative; height: 280px;
+  background: #0f1117; overflow: hidden;
+}
+#ground { position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: #1e2130; }
+#floor-grid {
+  position: absolute; bottom: 3px; left: 0; right: 0; height: 60px;
+  background: repeating-linear-gradient(90deg, transparent, transparent 59px, #1e2130 59px, #1e2130 60px);
+  opacity: 0.5;
+}
+ 
+#figure { position: absolute; bottom: 3px; left: 80px; width: 36px; }
+#figure svg { display: block; }
+ 
+#lock-indicator {
+  position: absolute; bottom: 60px; left: 80px;
+  width: 36px; text-align: center; opacity: 0; transition: opacity 0.3s;
+}
+#lock-indicator .lock-box {
+  width: 22px; height: 22px; background: #f04f5a; border-radius: 4px;
+  margin: 0 auto 3px; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 14px; font-weight: 700;
+}
+#lock-indicator .lock-label { font-size: 10px; color: #f04f5a; font-weight: 500; }
+ 
+#prediction-beam {
+  position: absolute; bottom: 3px; width: 2px; height: 260px;
+  border-left: 2px dashed #f5a623; opacity: 0; transition: opacity 0.3s;
+}
+ 
+#event-label { position: absolute; top: 16px; left: 20px; font-size: 12px; color: #5c6280; }
+ 
+/* Knee angle arc display */
+#angle-display {
+  position: absolute; top: 12px; right: 16px;
+  background: #0a0c12; border: 1px solid #1e2130; border-radius: 10px;
+  padding: 10px 14px; text-align: center;
+}
+#angle-display .angle-num { font-size: 26px; font-weight: 500; color: #378ADD; font-variant-numeric: tabular-nums; }
+#angle-display .angle-unit { font-size: 11px; color: #3c4060; margin-left: 2px; }
+#angle-display .angle-label { font-size: 10px; color: #3c4060; margin-top: 2px; }
+#imu-dots { display: flex; gap: 6px; justify-content: center; margin-top: 6px; }
+.imu-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #1e2130;
+  transition: background 0.2s;
+}
+.imu-dot.active { background: #378ADD; }
+ 
+#panels {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 1px; background: #1e2130; border-top: 1px solid #1e2130;
+}
+.panel { background: #0f1117; padding: 14px 16px; }
+.panel-label { font-size: 10px; color: #3c4060; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+.panel-val { font-size: 22px; font-weight: 500; color: #e8eaf0; font-variant-numeric: tabular-nums; transition: color 0.3s; }
+.panel-sub { font-size: 11px; color: #3c4060; margin-top: 3px; }
+ 
+#risk-bar-wrap { flex: 1; height: 6px; background: #1e2130; border-radius: 3px; overflow: hidden; }
+#risk-bar { height: 100%; border-radius: 3px; width: 0%; background: #22d48f; transition: width 0.15s, background 0.3s; }
+ 
+#api-panel {
+  background: #0f1117; border-top: 1px solid #1e2130;
+  padding: 12px 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+}
+.api-chip { border: 1px solid #1e2130; border-radius: 6px; padding: 8px 10px; font-size: 11px; }
+.api-chip .api-name { color: #5c6280; margin-bottom: 4px; }
+.api-chip .api-status { color: #3c4060; font-weight: 500; transition: color 0.2s; }
+.api-chip.active .api-status { color: #22d48f; }
+.api-chip.warning .api-status { color: #f5a623; }
+.api-chip.danger  .api-status { color: #f04f5a; }
+ 
+#controls {
+  border-top: 1px solid #1e2130; padding: 14px 20px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+#btn-run {
+  background: #22d48f; color: #0a1a0a; border: none; border-radius: 8px;
+  padding: 9px 22px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.2s;
+}
+#btn-run:hover { opacity: 0.85; }
+#btn-run:disabled { opacity: 0.4; cursor: default; }
+#btn-reset {
+  background: transparent; color: #5c6280; border: 1px solid #1e2130;
+  border-radius: 8px; padding: 9px 18px; font-size: 13px; cursor: pointer;
+}
+#btn-reset:hover { border-color: #3c4060; color: #e8eaf0; }
+#scenario-label { font-size: 12px; color: #3c4060; margin-left: auto; }
+</style>
+</head>
+<body>
+<div id="demo-wrap">
+ 
+  <div id="top-bar">
+    <span class="title">KneeSafe — fall prediction demo</span>
+    <span class="badge" id="status-badge">Monitoring</span>
+  </div>
+ 
+  <div id="scene">
+    <div id="floor-grid"></div>
+    <div id="ground"></div>
+    <div id="prediction-beam"></div>
+ 
+    <div id="figure">
+      <svg id="fig-svg" width="36" height="110" viewBox="0 0 36 110">
+        <circle id="head" cx="18" cy="10" r="8" fill="#378ADD"/>
+        <rect id="torso" x="12" y="20" width="12" height="32" rx="4" fill="#185FA5"/>
+        <rect id="brace" x="10" y="52" width="16" height="22" rx="3" fill="#0F6E56"/>
+        <line id="leg-l" x1="14" y1="74" x2="10" y2="110" stroke="#185FA5" stroke-width="5" stroke-linecap="round"/>
+        <line id="leg-r" x1="22" y1="74" x2="26" y2="110" stroke="#185FA5" stroke-width="5" stroke-linecap="round"/>
+        <line id="arm-l" x1="12" y1="26" x2="4"  y2="48"  stroke="#185FA5" stroke-width="4" stroke-linecap="round"/>
+        <line id="arm-r" x1="24" y1="26" x2="32" y2="48"  stroke="#185FA5" stroke-width="4" stroke-linecap="round"/>
+        <!-- IMU chips on thigh and shin -->
+        <rect x="26" y="44" width="8" height="5" rx="1" fill="#378ADD" opacity="0.9"/>
+        <rect x="26" y="80" width="8" height="5" rx="1" fill="#378ADD" opacity="0.9"/>
+      </svg>
+    </div>
+ 
+    <div id="lock-indicator">
+      <div class="lock-box">&#9632;</div>
+      <div class="lock-label">LOCKED</div>
+    </div>
+ 
+    <!-- Knee angle display top-right -->
+    <div id="angle-display">
+      <div>
+        <span class="angle-num" id="angle-num">12</span>
+        <span class="angle-unit">deg</span>
+      </div>
+      <div class="angle-label">Knee angle</div>
+      <div class="imu-dots">
+        <div class="imu-dot active" title="Thigh IMU"></div>
+        <div class="imu-dot active" title="Shin IMU"></div>
+      </div>
+      <div style="font-size:10px;color:#3c4060;margin-top:4px;">Thigh · Shin IMUs</div>
+    </div>
+ 
+    <div id="event-label">Walking normally</div>
+  </div>
+ 
+  <div id="panels">
+    <div class="panel">
+      <div class="panel-label">Knee flex rate</div>
+      <div class="panel-val" id="accel-val">4 deg/s</div>
+      <div class="panel-sub">OpenSenseRT</div>
+    </div>
+    <div class="panel">
+      <div class="panel-label">Gait error (LLTE)</div>
+      <div class="panel-val" id="llte-val">0.04</div>
+      <div class="panel-sub">ReBAIT analysis</div>
+    </div>
+    <div class="panel">
+      <div class="panel-label">Fall risk score</div>
+      <div class="panel-val" id="risk-val" style="color:#22d48f">0.00</div>
+      <div class="panel-sub" style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+        <div id="risk-bar-wrap"><div id="risk-bar"></div></div>
+        <span style="font-size:10px;color:#3c4060;">0.75 threshold</span>
+      </div>
+    </div>
+  </div>
+ 
+  <div id="api-panel">
+    <div class="api-chip" id="chip-opensense">
+      <div class="api-name">OpenSenseRT</div>
+      <div class="api-status" id="os-status">Streaming IMU data</div>
+    </div>
+    <div class="api-chip" id="chip-rebait">
+      <div class="api-name">ReBAIT</div>
+      <div class="api-status" id="rb-status">Gait analysis ready</div>
+    </div>
+    <div class="api-chip" id="chip-lstm">
+      <div class="api-name">LSTM model</div>
+      <div class="api-status" id="lstm-status">Inference running</div>
+    </div>
+  </div>
+ 
+  <div id="controls">
+    <button id="btn-run" onclick="runSim()">Simulate fall</button>
+    <button id="btn-reset" onclick="resetSim()">Reset</button>
+    <span id="scenario-label">Ready — press simulate to begin</span>
+  </div>
+ 
+</div>
+ 
+<script>
+// ── DOM refs ──────────────────────────────────────────────────────
+const fig        = document.getElementById('figure');
+const figSvg     = document.getElementById('fig-svg');
+const lockInd    = document.getElementById('lock-indicator');
+const predBeam   = document.getElementById('prediction-beam');
+const eventLbl   = document.getElementById('event-label');
+const badge      = document.getElementById('status-badge');
+const accelVal   = document.getElementById('accel-val');
+const llteVal    = document.getElementById('llte-val');
+const riskVal    = document.getElementById('risk-val');
+const riskBar    = document.getElementById('risk-bar');
+const scenLbl    = document.getElementById('scenario-label');
+const btnRun     = document.getElementById('btn-run');
+const angleNum   = document.getElementById('angle-num');
+const brace      = document.getElementById('brace');
+const legL       = document.getElementById('leg-l');
+const legR       = document.getElementById('leg-r');
+const armL       = document.getElementById('arm-l');
+const armR       = document.getElementById('arm-r');
+const chipOS     = document.getElementById('chip-opensense');
+const chipRB     = document.getElementById('chip-rebait');
+const chipLSTM   = document.getElementById('chip-lstm');
+const osStatus   = document.getElementById('os-status');
+const rbStatus   = document.getElementById('rb-status');
+const lstmStatus = document.getElementById('lstm-status');
+ 
+// ── State ─────────────────────────────────────────────────────────
+let rafId = null;
+let simRunning = false;
+let t = 0;
+let figX = 80;
+let phase = 'idle';
+let lockEngaged = false;
+let lockX = 0;
+ 
+// ── Helpers ───────────────────────────────────────────────────────
+function setRisk(r) {
+  const pct   = Math.min(100, Math.round(r * 100));
+  const color = r < 0.45 ? '#22d48f' : r < 0.75 ? '#f5a623' : '#f04f5a';
+  riskBar.style.width      = pct + '%';
+  riskBar.style.background = color;
+  riskVal.style.color      = color;
+  riskVal.textContent      = r.toFixed(2);
+}
+ 
+function setChip(chip, statusEl, mode, text) {
+  chip.className       = 'api-chip' + (mode ? ' ' + mode : '');
+  statusEl.textContent = text;
+}
+ 
+function setBadge(mode, text) {
+  badge.className  = 'badge' + (mode ? ' ' + mode : '');
+  badge.textContent = text;
+}
+ 
+// ── Knee angle from two IMU orientations ──────────────────────────
+// OpenSenseRT computes joint angles by differencing quaternion
+// orientations from the thigh and shin IMUs.
+// Here we simulate that output directly as a knee flexion angle.
+function computeKneeAngle(walkT, stumbleProgress) {
+  // Normal walking: knee flexes 0-15 deg rhythmically
+  const walkFlex = 8 + 7 * Math.abs(Math.sin(walkT * 4));
+  // Stumble: knee collapses rapidly (hyperextension or sudden deep flex)
+  const stumbleFlex = walkFlex + stumbleProgress * 68;
+  return Math.round(stumbleFlex);
+}
+ 
+// ── Pose helpers ──────────────────────────────────────────────────
+function walkPose(t) {
+  const swing = Math.sin(t * 4) * 12;
+  legL.setAttribute('x2', String(10 + swing));
+  legR.setAttribute('x2', String(26 - swing));
+  armL.setAttribute('x2', String(4  - swing * 0.5));
+  armR.setAttribute('x2', String(32 + swing * 0.5));
+}
+ 
+function stumblePose(progress) {
+  figSvg.style.transform       = 'rotate(' + (progress * 28) + 'deg)';
+  figSvg.style.transformOrigin = '18px 110px';
+  legL.setAttribute('x2', String(10 - progress * 8));
+  legR.setAttribute('x2', String(26 + progress * 16));
+}
+ 
+function lockedPose() {
+  figSvg.style.transform = 'rotate(0deg)';
+  ['10','110','26','110'].forEach((v, i) => {
+    const attrs = ['x2','y2','x2','y2'];
+    [legL, legL, legR, legR][i].setAttribute(attrs[i], v);
+  });
+  armL.setAttribute('x2', '4');
+  armR.setAttribute('x2', '32');
+  brace.setAttribute('fill', '#f04f5a');
+}
+ 
+function resetPose() {
+  figSvg.style.transform = 'rotate(0deg)';
+  brace.setAttribute('fill', '#0F6E56');
+  legL.setAttribute('x1','14'); legL.setAttribute('y1','74');
+  legL.setAttribute('x2','10'); legL.setAttribute('y2','110');
+  legR.setAttribute('x1','22'); legR.setAttribute('y1','74');
+  legR.setAttribute('x2','26'); legR.setAttribute('y2','110');
+  armL.setAttribute('x2','4');  armL.setAttribute('y2','48');
+  armR.setAttribute('x2','32'); armR.setAttribute('y2','48');
+}
+ 
+// ── Reset ─────────────────────────────────────────────────────────
+function resetSim() {
+  cancelAnimationFrame(rafId);
+  simRunning = false; lockEngaged = false;
+  t = 0; figX = 80; phase = 'idle';
+  fig.style.left   = figX + 'px';
+  lockInd.style.opacity  = '0';
+  predBeam.style.opacity = '0';
+  eventLbl.textContent   = 'Walking normally';
+  eventLbl.style.color   = '#5c6280';
+  angleNum.textContent   = '12';
+  angleNum.style.color   = '#378ADD';
+  setBadge('', 'Monitoring');
+  setRisk(0);
+  accelVal.textContent = '4 deg/s';
+  llteVal.textContent  = '0.04';
+  setChip(chipOS,   osStatus,   'active', 'Streaming IMU data');
+  setChip(chipRB,   rbStatus,   'active', 'Gait analysis ready');
+  setChip(chipLSTM, lstmStatus, 'active', 'Inference running');
+  scenLbl.textContent = 'Ready — press simulate to begin';
+  btnRun.disabled = false;
+  resetPose();
+}
+ 
+// ── Main simulation loop ───────────────────────────────────────────
+function runSim() {
+  if (simRunning) return;
+  simRunning = true;
+  btnRun.disabled = true;
+  phase = 'walk';
+  t = 0;
+ 
+  function tick() {
+    t += 0.016;
+ 
+    // ── PHASE 1: Normal walking ──────────────────────────────────
+    if (phase === 'walk') {
+      figX += 1.4;
+      fig.style.left = figX + 'px';
+      walkPose(t);
+ 
+      const noise    = (Math.random() - 0.5) * 0.3;
+      const angle    = computeKneeAngle(t, 0);
+      const flexRate = Math.round(4 + Math.abs(noise) * 6);
+      const llte     = parseFloat((0.03 + Math.abs(noise) * 0.15).toFixed(3));
+      const risk     = Math.max(0, Math.min(0.3, 0.06 + Math.abs(noise) * 0.25));
+ 
+      angleNum.textContent  = angle;
+      angleNum.style.color  = '#378ADD';
+      accelVal.textContent  = flexRate + ' deg/s';
+      llteVal.textContent   = llte.toFixed(3);
+      setRisk(risk);
+      setBadge('', 'Monitoring');
+      setChip(chipOS,   osStatus,   'active', 'Knee angle: ' + angle + 'deg');
+      setChip(chipRB,   rbStatus,   'active', 'Normal gait');
+      setChip(chipLSTM, lstmStatus, 'active', 'Risk: low');
+      eventLbl.textContent = 'Walking — knee flexion normal (' + angle + 'deg)';
+      eventLbl.style.color = '#5c6280';
+      scenLbl.textContent  = 'OpenSenseRT computing knee angle from thigh + shin IMUs…';
+ 
+      if (figX > 300) { phase = 'stumble'; t = 0; }
+    }
+ 
+    // ── PHASE 2: Stumble / collapse ──────────────────────────────
+    else if (phase === 'stumble') {
+      figX += 0.5;
+      fig.style.left = figX + 'px';
+ 
+      const progress = Math.min(1, t / 1.2);
+      stumblePose(progress);
+ 
+      const angle    = computeKneeAngle(0, progress);
+      const flexRate = Math.round(4 + progress * 180 + Math.random() * 20);
+      const llte     = parseFloat((0.04 + progress * 1.8).toFixed(3));
+      // Risk rises with both rapid angle change and LLTE
+      const risk     = Math.min(0.98, progress * 0.93 + Math.random() * 0.05);
+ 
+      angleNum.textContent = angle;
+      angleNum.style.color = risk > 0.45 ? '#f5a623' : '#378ADD';
+      accelVal.textContent = flexRate + ' deg/s';
+      llteVal.textContent  = llte.toFixed(3);
+      setRisk(risk);
+ 
+      if (risk > 0.45) {
+        setBadge('warning', 'Detecting instability');
+        setChip(chipOS,   osStatus,   'warning', 'Rapid flex: ' + flexRate + ' deg/s');
+        setChip(chipRB,   rbStatus,   'warning', 'LLTE elevated: ' + llte);
+        setChip(chipLSTM, lstmStatus, 'warning', 'Risk rising: ' + risk.toFixed(2));
+        eventLbl.textContent = 'Knee collapsing — angle ' + angle + 'deg — instability detected';
+        eventLbl.style.color = '#f5a623';
+        scenLbl.textContent  = 'ReBAIT flags gait error — LSTM processing 500ms IMU window…';
+      }
+ 
+      if (risk > 0.75 && !lockEngaged) {
+        lockEngaged = true;
+        lockX = figX;
+        phase = 'locked';
+        t = 0;
+      }
+    }
+ 
+    // ── PHASE 3: Brace locked, fall prevented ────────────────────
+    else if (phase === 'locked') {
+      const holdProgress = Math.min(1, t / 0.4);
+      if (holdProgress < 1) { stumblePose((1 - holdProgress) * 0.3); }
+      else { lockedPose(); }
+ 
+      lockInd.style.left    = lockX + 'px';
+      lockInd.style.opacity = '1';
+      predBeam.style.left   = (lockX + 18) + 'px';
+      predBeam.style.height = '260px';
+      predBeam.style.opacity = '0.7';
+ 
+      setRisk(0.91);
+      angleNum.textContent = '76';
+      angleNum.style.color = '#f04f5a';
+      accelVal.textContent = '184 deg/s';
+      llteVal.textContent  = '1.84';
+      setBadge('danger', 'Brace locked');
+      setChip(chipOS,   osStatus,   'danger', 'Collapse — 184 deg/s');
+      setChip(chipRB,   rbStatus,   'danger', 'LLTE critical: 1.84');
+      setChip(chipLSTM, lstmStatus, 'danger', 'Score 0.91 — lock fired');
+      eventLbl.textContent = 'FALL PREDICTED — solenoid locked before impact';
+      eventLbl.style.color = '#f04f5a';
+      scenLbl.textContent  = 'LSTM exceeded 0.75 threshold — solenoid engaged ~180ms before fall';
+ 
+      if (t > 2.5) { phase = 'done'; }
+    }
+ 
+    // ── PHASE 4: Done ────────────────────────────────────────────
+    else if (phase === 'done') {
+      cancelAnimationFrame(rafId);
+      simRunning  = false;
+      btnRun.disabled = false;
+      scenLbl.textContent = 'Simulation complete — press Reset to replay';
+      return;
+    }
+ 
+    rafId = requestAnimationFrame(tick);
+  }
+ 
+  rafId = requestAnimationFrame(tick);
+}
+ 
+resetSim();
+</script>
+</body>
+</html>
+ 
