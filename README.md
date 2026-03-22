@@ -25,8 +25,6 @@ A browser-based dashboard that connects to the ESP32 over WebSocket and displays
 - **Protocol:** WebSocket on port 81
 - **Usage:** Enter the ESP32's IP address in the dashboard, click Connect
 
-> Note: The dashboard was built for an earlier version of the firmware that included WiFi and IMU sensors. In the current prototype, WiFi is not active in `brace_receiver.ino`, so the dashboard will not receive data unless WiFi support is re-added.
-
 ---
 
 ### `esp32.cpp` — Earlier firmware draft (not used)
