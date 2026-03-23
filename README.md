@@ -1,6 +1,6 @@
 # Retain — MedSprint 2026
 
-A hackathon prototype for muscular dystrophy patients. The system is a knee brace with an electromagnetic solenoid lock that holds the knee in an extended position to prevent collapse. It is controlled by two push buttons on the brace itself.
+A hackathon prototype for muscular dystrophy patients. The system is a knee brace with an electromagnetic solenoid lock that holds the knee in an extended position to prevent collapse. It is controlled by two push buttons on a mouth retainer.
 
 ---
 
